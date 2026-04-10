@@ -24,15 +24,13 @@
 <div class="update-log-trigger" onclick="toggleLog()">[Update Log]</div>
 <div id="update-content">Update log:
 
-Update 1.2 - Legacy Object Mapping
-- ADDED: Objects 1903, 1904, 1905 auto-replaced with ID 40 (Legacy Slabs).
-
 Update 1.1 - Color Trigger Support + QoL Update!
 - ADDED: Object 899 color triggers now work!
 - ADDED: kS38 default BG/Ground color parsing.
 - FIXED: Colors apply on first load.
 - FIXED: "Max Stack Size" error for large levels.
 - ADDED: Smart Format Detector.
+- FIXED: Improved mapping for IDs 1903, 1904, 1905 to ID 40 using safe string replacement.
 
 Update 1.0 - Release!
 - Supports 1.0 objects</div>
@@ -115,29 +113,16 @@ function runConversion(xml) {
         var bin = Uint8Array.from(atob(rawB64), function(c) { return c.charCodeAt(0); });
         var levelText = new TextDecoder().decode(pako.ungzip(bin));
         
-        var objects = levelText.split(';');
-        var settingsStr = objects[0];
+        var fixedLevelText = levelText.replace(/(^|;|,|(?<=,))1,(1903|1904|1905)(?=,|$|;)/g, "$11,40");
         
-        var processedObjects = objects.slice(1).map(function(obj) {
-            var parts = obj.split(',');
-            for (var i = 0; i < parts.length; i += 2) {
-                if (parts[i] === '1') {
-                    var id = parts[i+1];
-                    if (id === '1903' || id === '1904' || id === '1905') {
-                        parts[i+1] = '40';
-                    }
-                }
-            }
-            return parts.join(',');
-        });
-
-        var finalLevelText = settingsStr + ';' + processedObjects.join(';');
+        var semiIdx = fixedLevelText.indexOf(';');
+        var settingsStr = semiIdx >= 0 ? fixedLevelText.slice(0, semiIdx) : '';
         
         var ks38val = extractKS38(settingsStr);
         var channels = parseKS38(ks38val);
         broadcastColors(channels);
 
-        var compressed = pako.gzip(new TextEncoder().encode(finalLevelText), { level: 9 });
+        var compressed = pako.gzip(new TextEncoder().encode(fixedLevelText), { level: 9 });
         var binaryString = '';
         var chunkSize = 8192;
         for (var i = 0; i < compressed.length; i += chunkSize) {
@@ -156,7 +141,7 @@ function runConversion(xml) {
             return Math.max(0,Math.min(255,x)).toString(16).padStart(2,'0');
         }).join('');
 
-        document.getElementById('status').innerText = 'Status: Done! BG ' + bgHex + '  Ground ' + grHex;
+        document.getElementById('status').innerText = 'Status: Done! BG ' + bgHex + ' Ground ' + grHex;
 
     } catch(e) {
         alert("Conversion Error: " + e.message);
