@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>GD Web: Universal Porter</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pako/2.1.0/pako.min.js"></script>
+    <style>
+        body { background: #1a1a1a; color: #ccc; font-family: monospace; padding: 20px; }
+        .update-log-trigger { position: absolute; top: 10px; right: 10px; cursor: pointer; border: 1px solid #444; padding: 5px; background: #222; font-size: 12px; }
+        #update-content { display: none; position: absolute; top: 40px; right: 10px; background: #111; border: 1px solid #444; padding: 15px; text-align: left; z-index: 100; white-space: pre-wrap; width: 300px; }
+        .container { max-width: 700px; margin: 40px auto; border: 2px solid #333; padding: 20px; }
+        #drop-zone { border: 2px dashed #444; padding: 30px; margin: 20px 0; cursor: pointer; }
+        textarea { width: 100%; height: 100px; background: #000; color: #bbb; border: 1px solid #444; padding: 10px; box-sizing: border-box; margin-bottom: 10px; }
+        button { background: #333; color: #fff; border: 1px solid #555; padding: 10px 20px; cursor: pointer; }
+        button:hover { background: #444; }
+        #status { margin: 10px 0; font-size: 13px; color: #999; }
+        .output-area { margin-top: 30px; border-top: 1px solid #333; padding-top: 20px; }
+    </style>
+</head>
+<body>
+
+<div class="update-log-trigger" onclick="toggleLog()">[Update Log]</div>
+<div id="update-content">Update log:
+Update 1.0 - Release!
+
+GMD to GD.com port features:
+- Supports all 1.0 obj to the game
+- Easy file imputer thingy
+- Simple copy-paste button
+- Probably not much else
+(WARNNG: THIS DOES NOT SUPPORT PAST 1.0 OBJECTS, INCLUDING COLOR TRIGGERS FROM TODAY, the 1.0 obj works fine tho!)</div>
+
+<div class="container">
+    <h1>GD Web: Universal Porter</h1>
+    <p>Ports GMD files into copy-pastable files for 1.txt in geometrydash.com!</p>
+
+    <div id="drop-zone">
+        Click or Drop .gmd file here
+    </div>
+
+    <textarea id="manual-input" placeholder="Paste plist XML here"></textarea>
+    <button onclick="processText()">Process Paste</button>
+
+    <div id="status"></div>
+
+    <div class="output-area">
+        <h3>Output:</h3>
+        <textarea id="output" readonly></textarea>
+        <button id="copy-btn" onclick="copyOutput()">Copy String</button>
+    </div>
+</div>
+
+<script>
+function toggleLog() {
+    var log = document.getElementById('update-content');
+    log.style.display = (log.style.display === 'block') ? 'none' : 'block';
+}
+
+function broadcastColor(r, g, b) {
+    window.__gdColors = window.__gdColors || {};
+    window.__gdColors[1000] = { r: r, g: g, b: b };
+    window.__gdColors[1001] = { r: r, g: g, b: b };
+    window.nextLevelBG = (r << 16) | (g << 8) | b;
+}
+
+function extractKS38(s) {
+    const m = s.match(/(?:^|,)kS38,([\s\S]*?)(?=,k[AS]\d|$)/);
+    return m ? m[1] : '';
+}
+
+function parseKS38(str) {
+    const channels = {};
+    if (!str) return channels;
+    const chunks = str.split('|');
+    for (const chunk of chunks) {
+        if (!chunk.trim()) continue;
+        const parts = chunk.split('_');
+        const props = {};
+        for (let j = 0; j + 1 < parts.length; j += 2) {
+            props[parseInt(parts[j], 10)] = parts[j + 1];
+        }
+        const cid = parseInt(props[6], 10);
+        if (!isNaN(cid)) {
+            channels[cid] = {
+                r: parseInt(props[1] || '255', 10),
+                g: parseInt(props[2] || '255', 10),
+                b: parseInt(props[3] || '255', 10)
+            };
+        }
+    }
+    return channels;
+}
+
+function runConversion(xml) {
+    const match = xml.match(/<k>k4<\/k><s>([\s\S]*?)<\/s>/);
+    if (!match) return alert("Error: No level data found.");
+
+    try {
+        const rawB64 = match[1].replace(/-/g, '+').replace(/_/g, '/');
+        const bin = Uint8Array.from(atob(rawB64), c => c.charCodeAt(0));
+        const levelText = new TextDecoder().decode(pako.ungzip(bin));
+        const settingsStr = levelText.slice(0, levelText.indexOf(';'));
+        const channels = parseKS38(extractKS38(settingsStr));
+        const bgColor = channels[1000] || { r: 0, g: 102, b: 255 };
+
+        broadcastColor(bgColor.r, bgColor.g, bgColor.b);
+
+        const compressed = pako.gzip(new TextEncoder().encode(levelText), { level: 9 });
+        const encoded = btoa(String.fromCharCode(...compressed)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+        document.getElementById('output').value = encoded;
+
+        document.getElementById('status').innerText = "Status: Conversion complete.";
+    } catch(e) { 
+        alert("Error: " + e.message);
+    }
+}
+
+const dz = document.getElementById('drop-zone');
+dz.ondragover = e => { e.preventDefault(); };
+dz.ondrop = e => { e.preventDefault(); handleFile(e.dataTransfer.files[0]); };
+dz.onclick = () => { const i = document.createElement('input'); i.type='file'; i.onchange=e=>handleFile(e.target.files[0]); i.click(); };
+
+async function handleFile(file) { if(file) runConversion(await file.text()); }
+function processText() { runConversion(document.getElementById('manual-input').value); }
+function copyOutput() { 
+    const o = document.getElementById('output'); 
+    o.select(); 
+    document.execCommand('copy'); 
+    alert("Copied."); 
+}
+</script>
+</body>
+</html>
