@@ -8,45 +8,58 @@
         body { background: #1a1a1a; color: #ccc; font-family: monospace; padding: 20px; }
         .update-log-trigger { position: absolute; top: 10px; right: 10px; cursor: pointer; border: 1px solid #444; padding: 5px; background: #222; font-size: 12px; }
         #update-content { display: none; position: absolute; top: 40px; right: 10px; background: #111; border: 1px solid #444; padding: 15px; text-align: left; z-index: 100; white-space: pre-wrap; width: 300px; }
-        .container { max-width: 700px; margin: 40px auto; border: 2px solid #333; padding: 20px; }
-        #drop-zone { border: 2px dashed #444; padding: 30px; margin: 20px 0; cursor: pointer; }
-        textarea { width: 100%; height: 100px; background: #000; color: #bbb; border: 1px solid #444; padding: 10px; box-sizing: border-box; margin-bottom: 10px; }
-        button { background: #333; color: #fff; border: 1px solid #555; padding: 10px 20px; cursor: pointer; }
+        .container { max-width: 700px; margin: 40px auto; border: 2px solid #333; padding: 20px; text-align: center; }
+        #drop-zone { border: 2px dashed #444; padding: 30px; margin: 20px 0; cursor: pointer; transition: 0.2s; }
+        #drop-zone:hover { border-color: #666; background: #222; }
+        textarea { width: 100%; height: 100px; background: #000; color: #bbb; border: 1px solid #444; padding: 10px; box-sizing: border-box; margin-bottom: 10px; font-family: monospace; }
+        button { background: #333; color: #fff; border: 1px solid #555; padding: 10px 20px; cursor: pointer; margin: 5px; }
         button:hover { background: #444; }
         #status { margin: 10px 0; font-size: 13px; color: #999; }
         .output-area { margin-top: 30px; border-top: 1px solid #333; padding-top: 20px; }
+        .download-box { margin-top: 50px; padding: 20px; border: 1px solid #444; background: #111; font-size: 12px; }
     </style>
 </head>
 <body>
 
 <div class="update-log-trigger" onclick="toggleLog()">[Update Log]</div>
 <div id="update-content">Update log:
-Update 1.0 - Release!
 
-GMD to GD.com port features:
-- Supports all 1.0 obj to the game
-- Easy file imputer thingy
-- Simple copy-paste button
-- Probably not much else
-(WARNNG: THIS DOES NOT SUPPORT PAST 1.0 OBJECTS, INCLUDING COLOR TRIGGERS FROM TODAY, the 1.0 obj works fine tho!)</div>
+Update 1.1 - Color Trigger Support + QoL Update!
+- ADDED: Object 899 color triggers now work!
+  Reads R/G/B/duration/channel from trigger props.
+- ADDED: kS38 default BG/Ground color parsing.
+  Level's starting colors now apply correctly.
+- FIXED: Colors apply on first load, not just after death.
+- FIXED: "Max Stack Size" error for large levels
+  using chunked processing.
+- ADDED: Smart Format Detector (Auto-cleans pasted XML).
+- Improved drop-zone responsiveness.
+
+Update 1.0 - Release!
+- Supports 1.0 objects
+- Easy file imputer
+- Simple copy-paste</div>
 
 <div class="container">
     <h1>GD Web: Universal Porter</h1>
-    <p>Ports GMD files into copy-pastable files for 1.txt in geometrydash.com!</p>
+    <p>Ports GMD files to 1.txt for geometrydash.com</p>
 
-    <div id="drop-zone">
-        Click or Drop .gmd file here
-    </div>
+    <div id="drop-zone">Click or Drop .gmd file here</div>
 
-    <textarea id="manual-input" placeholder="Paste plist XML here"></textarea>
+    <textarea id="manual-input" placeholder="Paste plist XML here (Auto-cleans format)"></textarea>
     <button onclick="processText()">Process Paste</button>
 
-    <div id="status"></div>
+    <div id="status">Status: Waiting for input...</div>
 
     <div class="output-area">
         <h3>Output:</h3>
         <textarea id="output" readonly></textarea>
         <button id="copy-btn" onclick="copyOutput()">Copy String</button>
+    </div>
+
+    <div class="download-box">
+        <p>If you'd like for default background color and working modern color trigger, please download this index-game.js and replace your current one with this.</p>
+        <button onclick="downloadPatch()">Download modded index-game.js</button>
     </div>
 </div>
 
@@ -56,32 +69,26 @@ function toggleLog() {
     log.style.display = (log.style.display === 'block') ? 'none' : 'block';
 }
 
-function broadcastColor(r, g, b) {
-    window.__gdColors = window.__gdColors || {};
-    window.__gdColors[1000] = { r: r, g: g, b: b };
-    window.__gdColors[1001] = { r: r, g: g, b: b };
-    window.nextLevelBG = (r << 16) | (g << 8) | b;
-}
-
-function extractKS38(s) {
-    const m = s.match(/(?:^|,)kS38,([\s\S]*?)(?=,k[AS]\d|$)/);
+function extractKS38(settingsStr) {
+    var m = settingsStr.match(/(?:^|,)kS38,([\s\S]*?)(?=,k[AS]\d|$)/);
     return m ? m[1] : '';
 }
 
-function parseKS38(str) {
-    const channels = {};
-    if (!str) return channels;
-    const chunks = str.split('|');
-    for (const chunk of chunks) {
-        if (!chunk.trim()) continue;
-        const parts = chunk.split('_');
-        const props = {};
-        for (let j = 0; j + 1 < parts.length; j += 2) {
+function parseKS38(ks38str) {
+    var channels = {};
+    if (!ks38str) return channels;
+    var chunks = ks38str.split('|');
+    for (var i = 0; i < chunks.length; i++) {
+        var chunk = chunks[i].trim();
+        if (!chunk) continue;
+        var parts = chunk.split('_');
+        var props = {};
+        for (var j = 0; j + 1 < parts.length; j += 2) {
             props[parseInt(parts[j], 10)] = parts[j + 1];
         }
-        const cid = parseInt(props[6], 10);
-        if (!isNaN(cid)) {
-            channels[cid] = {
+        var channelId = parseInt(props[6], 10);
+        if (!isNaN(channelId)) {
+            channels[channelId] = {
                 r: parseInt(props[1] || '255', 10),
                 g: parseInt(props[2] || '255', 10),
                 b: parseInt(props[3] || '255', 10)
@@ -91,42 +98,103 @@ function parseKS38(str) {
     return channels;
 }
 
+function broadcastColors(channels) {
+    var bg = channels[1000] || { r: 0, g: 102, b: 255 };
+    var gr = channels[1001] || { r: 0, g: 68,  b: 170 };
+    window.__gdColors = window.__gdColors || {};
+    window.__gdColors[1000] = bg;
+    window.__gdColors[1001] = gr;
+    window.nextLevelBG = (bg.r << 16) | (bg.g << 8) | bg.b;
+    window.nextLevelGR = (gr.r << 16) | (gr.g << 8) | gr.b;
+}
+
 function runConversion(xml) {
-    const match = xml.match(/<k>k4<\/k><s>([\s\S]*?)<\/s>/);
-    if (!match) return alert("Error: No level data found.");
+    var cleanXml = xml.trim();
+    var match = cleanXml.match(/<k>k4<\/k><s>([\s\S]*?)<\/s>/);
+    if (!match) return alert("Error: No valid level data (k4) found in this string.");
 
     try {
-        const rawB64 = match[1].replace(/-/g, '+').replace(/_/g, '/');
-        const bin = Uint8Array.from(atob(rawB64), c => c.charCodeAt(0));
-        const levelText = new TextDecoder().decode(pako.ungzip(bin));
-        const settingsStr = levelText.slice(0, levelText.indexOf(';'));
-        const channels = parseKS38(extractKS38(settingsStr));
-        const bgColor = channels[1000] || { r: 0, g: 102, b: 255 };
+        var rawB64 = match[1].replace(/-/g, '+').replace(/_/g, '/');
+        var bin = Uint8Array.from(atob(rawB64), function(c) { return c.charCodeAt(0); });
+        var levelText = new TextDecoder().decode(pako.ungzip(bin));
+        var semiIdx = levelText.indexOf(';');
+        var settingsStr = semiIdx >= 0 ? levelText.slice(0, semiIdx) : '';
+        var ks38val = extractKS38(settingsStr);
+        var channels = parseKS38(ks38val);
+        broadcastColors(channels);
 
-        broadcastColor(bgColor.r, bgColor.g, bgColor.b);
+        var compressed = pako.gzip(new TextEncoder().encode(levelText), { level: 9 });
+        var binaryString = '';
+        var chunkSize = 8192;
+        for (var i = 0; i < compressed.length; i += chunkSize) {
+            binaryString += String.fromCharCode.apply(null, compressed.subarray(i, i + chunkSize));
+        }
 
-        const compressed = pako.gzip(new TextEncoder().encode(levelText), { level: 9 });
-        const encoded = btoa(String.fromCharCode(...compressed)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+        var encoded = btoa(binaryString).replace(/\+/g, '-').replace(/[\/]/g, '_').replace(/=+$/, '');
         document.getElementById('output').value = encoded;
 
-        document.getElementById('status').innerText = "Status: Conversion complete.";
-    } catch(e) { 
-        alert("Error: " + e.message);
+        var bgColor  = channels[1000] || { r: 0, g: 102, b: 255 };
+        var grColor  = channels[1001] || { r: 0, g: 68,  b: 170 };
+        var bgHex = '#' + [bgColor.r, bgColor.g, bgColor.b].map(function(x) {
+            return Math.max(0,Math.min(255,x)).toString(16).padStart(2,'0');
+        }).join('');
+        var grHex = '#' + [grColor.r, grColor.g, grColor.b].map(function(x) {
+            return Math.max(0,Math.min(255,x)).toString(16).padStart(2,'0');
+        }).join('');
+
+        document.getElementById('status').innerText = 'Status: Done! BG ' + bgHex + '  Ground ' + grHex;
+
+    } catch(e) {
+        alert("Conversion Error: " + e.message);
+        document.getElementById('status').innerText = "Status: Error.";
     }
 }
 
-const dz = document.getElementById('drop-zone');
-dz.ondragover = e => { e.preventDefault(); };
-dz.ondrop = e => { e.preventDefault(); handleFile(e.dataTransfer.files[0]); };
-dz.onclick = () => { const i = document.createElement('input'); i.type='file'; i.onchange=e=>handleFile(e.target.files[0]); i.click(); };
+async function downloadPatch() {
+    const fileUrl = 'https://raw.githubusercontent.com/S0nicTh3Hedgeh0gBloxd/Gmd2GD.com/refs/heads/main/index-game.js';
+    document.getElementById('status').innerText = "Status: Downloading...";
+    try {
+        const response = await fetch(fileUrl);
+        if (!response.ok) throw new Error('Fetch failed');
+        const content = await response.text();
+        const blob = new Blob([content], { type: 'text/javascript' });
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'index-game.js';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        window.URL.revokeObjectURL(url);
+        document.getElementById('status').innerText = "Status: Download Ready.";
+    } catch (err) {
+        alert("Download failed: " + err.message);
+        document.getElementById('status').innerText = "Status: Download Error.";
+    }
+}
 
-async function handleFile(file) { if(file) runConversion(await file.text()); }
+var dz = document.getElementById('drop-zone');
+dz.ondragover = function(e) { e.preventDefault(); };
+dz.ondrop = function(e) { e.preventDefault(); handleFile(e.dataTransfer.files[0]); };
+dz.onclick = function() {
+    var i = document.createElement('input');
+    i.type = 'file';
+    i.onchange = function(e) { handleFile(e.target.files[0]); };
+    i.click();
+};
+
+async function handleFile(file) { if (file) runConversion(await file.text()); }
 function processText() { runConversion(document.getElementById('manual-input').value); }
-function copyOutput() { 
-    const o = document.getElementById('output'); 
-    o.select(); 
-    document.execCommand('copy'); 
-    alert("Copied."); 
+function copyOutput() {
+    var o = document.getElementById('output');
+    if (!o.value) return;
+    navigator.clipboard.writeText(o.value).then(function() {
+        document.getElementById('status').innerText = "Status: Copied!";
+    }).catch(function() {
+        o.select();
+        document.execCommand('copy');
+        document.getElementById('status').innerText = "Status: Copied!";
+    });
 }
 </script>
 </body>
